@@ -1,0 +1,99 @@
+---
+description: Patterns for exporting DataFrame schemas and metadata for LLM/agentic consumption
+globs: "**/*.py"
+alwaysApply: false
+---
+
+## DataFrame to LLM Handoff
+
+When preparing pandas DataFrames for LLM analysis or agentic workflows, export schema information in structured, consumable formats rather than raw data.
+
+## Core Export Pattern
+
+Export these key metadata elements:
+- **Column names and data types**. The foundation for LLM understanding of data structure.
+- **Shape information**. Row and column counts provide scale context.
+- **Memory usage**. Helps LLMs understand data size constraints.
+- **Null analysis**. Columns with missing data and their percentages.
+- **Sample values**. Representative examples that show actual data patterns.
+
+## Preferred Export Formats
+
+| Format | Use Case |
+|--------|----------|
+| Markdown | Best for LLM consumption - structured, readable, includes samples |
+| JSON | Programmatic access, API responses, structured parsing |
+| Text | Human-readable logs, quick inspection |
+
+## Markdown Schema Pattern
+
+```python
+# ✅ DO: Export structured schema with samples
+def export_schema_markdown(df: pd.DataFrame, filepath: Path) -> None:
+    with open(filepath, "w") as f:
+        f.write("# DataFrame Schema\n\n")
+        f.write(f"- **Rows**: {df.shape[0]:,}\n")
+        f.write(f"- **Columns**: {df.shape[1]}\n\n")
+
+        f.write("| Column | Data Type | Null % | Sample Values |\n")
+        f.write("|--------|-----------|--------|---------------|\n")
+
+        for col in df.columns:
+            dtype = str(df[col].dtype)
+            null_pct = f"{df[col].isnull().sum()/len(df)*100:.1f}%"
+            samples = ", ".join(str(v)[:30] for v in df[col].dropna().head(3))
+            f.write(f"| `{col}` | `{dtype}` | {null_pct} | {samples} |\n")
+
+# ❌ DON'T: Dump raw DataFrame to string
+df.to_string()  # Unstructured, loses type info
+df.to_csv()     # No schema metadata
+```
+
+## JSON Schema Pattern
+
+```python
+# ✅ DO: Include comprehensive metadata
+dtype_info = {
+    "columns": len(df.columns),
+    "rows": len(df),
+    "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
+    "memory_usage_mb": df.memory_usage(deep=True).sum() / (1024 * 1024),
+    "nullable_columns": df.columns[df.isnull().any()].tolist(),
+}
+```
+
+## Anonymization for Public Sharing
+
+When schemas will be shared publicly or with external LLMs:
+- **Replace sensitive identifiers**. Account IDs, user IDs, transaction IDs become generic sequential values.
+- **Generalize timestamps**. Replace specific dates/times with representative examples.
+- **Preserve market/domain data**. Keep non-sensitive categorical values (symbols, status codes).
+- **Maintain data types**. Anonymized values must preserve original type and format.
+
+```python
+# ✅ DO: Anonymize while preserving structure
+def anonymize_sample(value: Any, column_name: str) -> Any:
+    if pd.isna(value):
+        return value
+    if "id" in column_name.lower():
+        return f"ID_{hash(value) % 10000:04d}"
+    return value
+```
+
+## Data Type Summary
+
+Include a summary of column types for quick LLM comprehension:
+
+```python
+dtype_counts = df.dtypes.value_counts()
+for dtype, count in dtype_counts.items():
+    f.write(f"- **{dtype}**: {count} columns\n")
+```
+
+## Best Practices
+
+- Export schema files alongside data processing scripts
+- Use consistent naming: `{dataset}_schema.md`, `{dataset}_dtypes.json`
+- Include privacy notice when sharing anonymized schemas
+- Create parent directories automatically with `Path.mkdir(parents=True, exist_ok=True)`
+- Log export operations for debugging
