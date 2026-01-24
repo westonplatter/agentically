@@ -12,4 +12,4 @@
 
 5. **Don't run as root** - Create and switch to a non-root user with `USER` instruction for better security.
 
-6. **Use `.dockerignore`** - Exclude unnecessary files (`.git`, `node_modules`, `__pycache__`) to speed up builds and reduce context size.
+6. **Use `.dockerignore`** - Exclude unnecessary files (`.git`, `node_modules`, `__pycache__`, `data`) to speed up builds and reduce context size.
