@@ -1,9 +1,13 @@
 ## Python
 
-### Python code writing
+### Verifying Code
 - Never run Python or shell to test code
 - Use Ruff for fast feedback during edits
 - Require Pyright to pass before declaring changes correct
+
+### Code Organization
+- Always place python imports at top of file
+- Never import packages in functions
 
 ### Principles
 1. **Use `uv run python`** - Always execute Python commands via `uv run python ...` to ensure consistent dependency management and virtual environment isolation.
