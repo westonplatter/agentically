@@ -1,5 +1,9 @@
 ## Rust Core Principles
 
+## Code Edit Workflow
+After making code changes, run `cargo check` to verify the code compiles without warnings
+Fix any warnings before considering the task complete.
+
 ### Clarity Beats Cleverness
 Readable, explicit code is preferred over compact or “smart” code.
 Use descriptive names over short ones
