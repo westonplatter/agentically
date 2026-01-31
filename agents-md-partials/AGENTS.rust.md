@@ -1,4 +1,4 @@
-## Rust Core Principals
+## Rust Core Principles
 
 ### Clarity Beats Cleverness
 Readable, explicit code is preferred over compact or “smart” code.
