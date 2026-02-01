@@ -19,10 +19,16 @@ class YAxisMode(Enum):
 class ValueMode(Enum):
     """Value mode for heatmap bins."""
 
+    # Liquidity metrics
     OPEN_INTEREST_ABSOLUTE = "oi_absolute"  # Raw open interest
     OPEN_INTEREST_PERCENT = "oi_percent"  # OI as % of total OI for that DTE
     VOLUME_ABSOLUTE = "volume_absolute"  # Raw volume
     VOLUME_PERCENT = "volume_percent"  # Volume as % of total volume for that DTE
+
+    # Bid-ask spread metrics
+    SPREAD_ABSOLUTE = "spread_absolute"  # Raw bid-ask spread in dollars
+    SPREAD_PERCENT = "spread_percent"  # Spread as % of mid price
+    SPREAD_PER_DELTA = "spread_per_delta"  # Spread normalized by delta (cost per delta exposure)
 
 
 @dataclass

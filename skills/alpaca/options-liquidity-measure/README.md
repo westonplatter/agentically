@@ -19,6 +19,11 @@ A skill for visualizing options chain liquidity using 3D heatmaps. Uses Alpaca's
   - Open Interest (% of DTE total)
   - Volume (absolute)
   - Volume (% of DTE total)
+- **Bid-Ask Spread Analysis**:
+  - Spread in dollars (absolute)
+  - Spread as % of mid price
+  - Spread per delta (cost of delta exposure)
+  - Color-coded: green = tight spreads (good), red = wide spreads (poor liquidity)
 
 ## Installation
 
@@ -55,6 +60,15 @@ python -m skills.alpaca.options-liquidity-measure.cli TSLA --dte-min 7 --dte-max
 
 # Save as PNG and open in browser
 python -m skills.alpaca.options-liquidity-measure.cli NVDA --format png --show
+
+# Bid-ask spread heatmap (% of mid price) - see where liquidity is best
+python -m skills.alpaca.options-liquidity-measure.cli SPY --value spread_percent --y-axis moneyness
+
+# Absolute spread heatmap with summary statistics
+python -m skills.alpaca.options-liquidity-measure.cli AAPL --value spread_absolute --summary
+
+# Spread per delta - cost efficiency for delta exposure
+python -m skills.alpaca.options-liquidity-measure.cli QQQ --value spread_per_delta --option-type call
 ```
 
 ### Python API
@@ -99,9 +113,21 @@ fig_split = heatmap.create_split_heatmap(config)
 heatmap.save_figure(fig_2d, "aapl_liquidity", format="html")
 fig_2d.show()  # Opens in browser
 
-# Get summary statistics
+# Get summary statistics (includes spread stats)
 summary = heatmap.get_liquidity_summary()
 print(f"Total OI: {summary['total_open_interest']:,}")
+print(f"Avg Spread: ${summary['spread_stats']['avg_spread_absolute']:.2f}")
+print(f"Tightest spread: {summary['spread_stats']['tightest_spread_contracts'][0]}")
+
+# Create bid-ask spread heatmap
+spread_config = HeatmapConfig(
+    y_axis_mode=YAxisMode.MONEYNESS,
+    value_mode=ValueMode.SPREAD_PERCENT,  # Spread as % of mid price
+    min_moneyness=0.95,
+    max_moneyness=1.05,
+)
+spread_fig = heatmap.create_heatmap(spread_config)
+spread_fig.show()  # Green = tight spreads, Red = wide spreads
 ```
 
 ### Using Cached Data
@@ -145,8 +171,22 @@ data/
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--y-axis` | `strike` | Y-axis mode: `strike`, `moneyness`, `delta` |
-| `--value` | `oi_absolute` | Value mode: `oi_absolute`, `oi_percent`, `volume_absolute`, `volume_percent` |
+| `--value` | `oi_absolute` | Value mode (see below) |
 | `--option-type` | `both` | Filter: `call`, `put`, `both` |
+
+### Value Modes
+
+| Mode | Description |
+|------|-------------|
+| `oi_absolute` | Open Interest (raw count) |
+| `oi_percent` | Open Interest as % of DTE total |
+| `volume_absolute` | Volume (raw count) |
+| `volume_percent` | Volume as % of DTE total |
+| `spread_absolute` | Bid-ask spread in dollars |
+| `spread_percent` | Bid-ask spread as % of mid price |
+| `spread_per_delta` | Spread normalized by delta ($/delta) |
+
+### Other Options
 | `--dte-min` | `0` | Minimum days to expiration |
 | `--dte-max` | `90` | Maximum days to expiration |
 | `--moneyness-min` | `0.8` | Min moneyness filter |
@@ -160,6 +200,31 @@ data/
 | `--use-cached` | - | Use cached data if available |
 | `--show` | - | Open plot in browser |
 | `--summary` | - | Print liquidity summary |
+
+## Bid-Ask Spread Analysis
+
+The spread heatmaps help traders identify where market liquidity is best (tight spreads) or worst (wide spreads) across the options chain.
+
+### Interpreting Spread Heatmaps
+
+- **Green zones**: Tight spreads = good liquidity, lower transaction costs
+- **Red zones**: Wide spreads = poor liquidity, higher transaction costs
+- **Colorscale is reversed** for spread metrics so that "better" (lower) values appear green
+
+### Spread Metrics
+
+| Metric | Use Case |
+|--------|----------|
+| `spread_absolute` | Raw dollar cost to cross the spread. Good for comparing similar-priced options. |
+| `spread_percent` | Spread relative to option price. Better for comparing across different strikes/expirations. |
+| `spread_per_delta` | Cost per unit of delta exposure. Useful for delta-neutral strategies to find the most efficient hedging instruments. |
+
+### Tips
+
+- ATM options typically have tighter spreads than deep OTM/ITM
+- Near-term expirations often have better liquidity than far-dated
+- High OI/volume doesn't always mean tight spreads - check both!
+- Use `--summary` to see spread statistics including the tightest spread contracts
 
 ## Colorscales
 

@@ -28,6 +28,8 @@ Examples:
   %(prog)s SPY --y-axis moneyness --value oi_percent
   %(prog)s QQQ --dte-min 7 --dte-max 45 --plot-type 3d
   %(prog)s TSLA --option-type call --output tsla_calls
+  %(prog)s NVDA --value spread_percent --y-axis moneyness  # Bid-ask spread heatmap
+  %(prog)s AMD --value spread_absolute --summary  # Show spread statistics
 
 Environment Variables:
   ALPACA_API_KEY      Your Alpaca API key (required)
@@ -53,9 +55,15 @@ Environment Variables:
     parser.add_argument(
         "--value",
         type=str,
-        choices=["oi_absolute", "oi_percent", "volume_absolute", "volume_percent"],
+        choices=[
+            "oi_absolute", "oi_percent",
+            "volume_absolute", "volume_percent",
+            "spread_absolute", "spread_percent", "spread_per_delta",
+        ],
         default="oi_absolute",
-        help="Value mode for heatmap bins (default: oi_absolute)",
+        help="Value mode for heatmap bins. Liquidity: oi_*, volume_*. "
+             "Spread: spread_absolute ($), spread_percent (%%), spread_per_delta. "
+             "(default: oi_absolute)",
     )
 
     parser.add_argument(
@@ -235,6 +243,26 @@ def main() -> int:
         print(f"DTE Range: {summary['dte_range']['min']} - {summary['dte_range']['max']}")
         print(f"Moneyness Range: {summary['moneyness_range']['min']:.2f} - "
               f"{summary['moneyness_range']['max']:.2f}")
+
+        # Spread statistics
+        spread_stats = summary.get("spread_stats", {})
+        if spread_stats.get("contracts_with_quotes", 0) > 0:
+            print("\n=== Bid-Ask Spread Statistics ===")
+            print(f"Contracts with quotes: {spread_stats['contracts_with_quotes']}")
+            print(f"Avg Spread: ${spread_stats['avg_spread_absolute']:.2f} "
+                  f"({spread_stats['avg_spread_percent']:.1f}%)")
+            print(f"Median Spread: ${spread_stats['median_spread_absolute']:.2f} "
+                  f"({spread_stats['median_spread_percent']:.1f}%)")
+            print(f"Range: ${spread_stats['min_spread_absolute']:.2f} - "
+                  f"${spread_stats['max_spread_absolute']:.2f}")
+
+            if spread_stats.get("tightest_spread_contracts"):
+                print("\nTightest Spreads:")
+                for contract in spread_stats["tightest_spread_contracts"]:
+                    print(f"  {contract['option_type'].upper()} {contract['strike']} "
+                          f"(DTE {contract['dte']}): "
+                          f"${contract['spread_absolute']:.2f} ({contract['spread_percent']:.1f}%) "
+                          f"[{contract['bid']:.2f} x {contract['ask']:.2f}]")
         print()
 
     # Build config
@@ -249,6 +277,9 @@ def main() -> int:
         "oi_percent": ValueMode.OPEN_INTEREST_PERCENT,
         "volume_absolute": ValueMode.VOLUME_ABSOLUTE,
         "volume_percent": ValueMode.VOLUME_PERCENT,
+        "spread_absolute": ValueMode.SPREAD_ABSOLUTE,
+        "spread_percent": ValueMode.SPREAD_PERCENT,
+        "spread_per_delta": ValueMode.SPREAD_PER_DELTA,
     }
 
     config = HeatmapConfig(

@@ -4,7 +4,7 @@ Plotly-based 3D heatmap visualization for options chain liquidity.
 Creates interactive heatmaps showing:
 - X-axis: Days to Expiration (DTE)
 - Y-axis: Strike price / Moneyness / Delta
-- Color/Z-axis: Open Interest or Volume (absolute or % of DTE)
+- Color/Z-axis: Open Interest, Volume, or Bid-Ask Spread metrics
 """
 
 from datetime import datetime
@@ -52,6 +52,15 @@ class LiquidityHeatmap:
             dte = (contract.expiration_date.date() - today).days
             moneyness = contract.strike_price / self.chain_data.underlying_price
 
+            # Calculate bid-ask spread metrics
+            spread_absolute = contract.ask - contract.bid
+            mid_price = (contract.bid + contract.ask) / 2
+            spread_percent = (spread_absolute / mid_price * 100) if mid_price > 0 else 0
+
+            # Spread per delta (cost of delta exposure)
+            delta_abs = abs(contract.delta) if contract.delta is not None else 0
+            spread_per_delta = spread_absolute / delta_abs if delta_abs > 0.01 else None
+
             records.append({
                 "symbol": contract.symbol,
                 "expiration": contract.expiration_date,
@@ -64,8 +73,12 @@ class LiquidityHeatmap:
                 "delta": contract.delta,
                 "bid": contract.bid,
                 "ask": contract.ask,
+                "mid_price": mid_price,
                 "last_price": contract.last_price,
                 "iv": contract.implied_volatility,
+                "spread_absolute": spread_absolute,
+                "spread_percent": spread_percent,
+                "spread_per_delta": spread_per_delta,
             })
 
         return pd.DataFrame(records)
@@ -103,8 +116,46 @@ class LiquidityHeatmap:
             dte_totals = df.groupby("dte")["volume"].transform("sum")
             return (df["volume"] / dte_totals.replace(0, 1)) * 100
 
+        elif mode == ValueMode.SPREAD_ABSOLUTE:
+            return df["spread_absolute"]
+
+        elif mode == ValueMode.SPREAD_PERCENT:
+            return df["spread_percent"]
+
+        elif mode == ValueMode.SPREAD_PER_DELTA:
+            return df["spread_per_delta"].fillna(0)
+
         else:
             raise ValueError(f"Unknown value mode: {mode}")
+
+    def _is_spread_mode(self, mode: ValueMode) -> bool:
+        """Check if the value mode is a spread metric."""
+        return mode in (
+            ValueMode.SPREAD_ABSOLUTE,
+            ValueMode.SPREAD_PERCENT,
+            ValueMode.SPREAD_PER_DELTA,
+        )
+
+    def _get_colorscale(self, mode: ValueMode, base_colorscale: str) -> str | list:
+        """
+        Get appropriate colorscale for the value mode.
+
+        For spread metrics, we reverse the colorscale so that lower (tighter) spreads
+        appear in the "good" color (typically green/blue) and higher spreads appear
+        in the "bad" color (typically red/yellow).
+        """
+        if self._is_spread_mode(mode):
+            # Use RdYlGn reversed so green = tight spread, red = wide spread
+            return "RdYlGn"
+        return base_colorscale
+
+    def _get_aggregation_func(self, mode: ValueMode) -> str:
+        """Get appropriate aggregation function for pivot tables."""
+        # For spread metrics, use mean (average spread at that strike/DTE)
+        # For volume/OI metrics, use sum (total at that strike/DTE)
+        if self._is_spread_mode(mode):
+            return "mean"
+        return "sum"
 
     def _get_colorbar_title(self, mode: ValueMode) -> str:
         """Get colorbar title based on value mode."""
@@ -113,6 +164,9 @@ class LiquidityHeatmap:
             ValueMode.OPEN_INTEREST_PERCENT: "Open Interest (% of DTE)",
             ValueMode.VOLUME_ABSOLUTE: "Volume",
             ValueMode.VOLUME_PERCENT: "Volume (% of DTE)",
+            ValueMode.SPREAD_ABSOLUTE: "Bid-Ask Spread ($)",
+            ValueMode.SPREAD_PERCENT: "Bid-Ask Spread (%)",
+            ValueMode.SPREAD_PER_DELTA: "Spread per Delta ($)",
         }
         return titles.get(mode, "Value")
 
@@ -175,19 +229,27 @@ class LiquidityHeatmap:
 
         # Create pivot table for heatmap
         # Aggregate if multiple contracts per (DTE, Y) combination
+        # Use mean for spread metrics, sum for volume/OI
+        aggfunc = self._get_aggregation_func(config.value_mode)
         pivot_df = df.pivot_table(
             values="z_value",
             index="y_value",
             columns="dte",
-            aggfunc="sum",
+            aggfunc=aggfunc,
             fill_value=0,
         )
 
         # Sort index appropriately
         pivot_df = pivot_df.sort_index(ascending=True)
 
+        # Get appropriate colorscale (reversed for spread metrics)
+        colorscale = self._get_colorscale(config.value_mode, config.colorscale)
+
         # Create figure
         fig = go.Figure()
+
+        # Format string for hover: use decimals for spread, integers for OI/volume
+        z_format = ".2f" if self._is_spread_mode(config.value_mode) else ",.0f"
 
         # Add heatmap trace
         fig.add_trace(
@@ -195,14 +257,15 @@ class LiquidityHeatmap:
                 z=pivot_df.values,
                 x=pivot_df.columns.tolist(),  # DTE
                 y=pivot_df.index.tolist(),  # Y values
-                colorscale=config.colorscale,
+                colorscale=colorscale,
+                reversescale=self._is_spread_mode(config.value_mode),  # Reverse for spreads
                 colorbar=dict(
                     title=self._get_colorbar_title(config.value_mode),
                 ),
                 hovertemplate=(
                     f"DTE: %{{x}}<br>"
                     f"{self._get_y_axis_title(config.y_axis_mode)}: %{{y:.2f}}<br>"
-                    f"{self._get_colorbar_title(config.value_mode)}: %{{z:,.0f}}"
+                    f"{self._get_colorbar_title(config.value_mode)}: %{{z:{z_format}}}"
                     "<extra></extra>"
                 ),
             )
@@ -292,11 +355,12 @@ class LiquidityHeatmap:
         df["z_value"] = self._get_z_values(df, config.value_mode)
 
         # Create pivot table
+        aggfunc = self._get_aggregation_func(config.value_mode)
         pivot_df = df.pivot_table(
             values="z_value",
             index="y_value",
             columns="dte",
-            aggfunc="sum",
+            aggfunc=aggfunc,
             fill_value=0,
         )
 
@@ -307,6 +371,10 @@ class LiquidityHeatmap:
         y = pivot_df.index.values  # Y values
         z = pivot_df.values
 
+        # Get appropriate colorscale
+        colorscale = self._get_colorscale(config.value_mode, config.colorscale)
+        z_format = ".2f" if self._is_spread_mode(config.value_mode) else ",.0f"
+
         # Create figure
         fig = go.Figure()
 
@@ -315,14 +383,15 @@ class LiquidityHeatmap:
                 z=z,
                 x=x,
                 y=y,
-                colorscale=config.colorscale,
+                colorscale=colorscale,
+                reversescale=self._is_spread_mode(config.value_mode),
                 colorbar=dict(
                     title=self._get_colorbar_title(config.value_mode),
                 ),
                 hovertemplate=(
                     f"DTE: %{{x}}<br>"
                     f"{self._get_y_axis_title(config.y_axis_mode)}: %{{y:.2f}}<br>"
-                    f"{self._get_colorbar_title(config.value_mode)}: %{{z:,.0f}}"
+                    f"{self._get_colorbar_title(config.value_mode)}: %{{z:{z_format}}}"
                     "<extra></extra>"
                 ),
             )
@@ -404,6 +473,11 @@ class LiquidityHeatmap:
             horizontal_spacing=0.1,
         )
 
+        # Get appropriate colorscale and aggregation
+        colorscale = self._get_colorscale(config.value_mode, config.colorscale)
+        aggfunc = self._get_aggregation_func(config.value_mode)
+        z_format = ".2f" if self._is_spread_mode(config.value_mode) else ",.0f"
+
         for i, (subset_df, col) in enumerate([(calls_df, 1), (puts_df, 2)], 1):
             if subset_df.empty:
                 continue
@@ -415,7 +489,7 @@ class LiquidityHeatmap:
                 values="z_value",
                 index="y_value",
                 columns="dte",
-                aggfunc="sum",
+                aggfunc=aggfunc,
                 fill_value=0,
             )
 
@@ -426,7 +500,8 @@ class LiquidityHeatmap:
                     z=pivot_df.values,
                     x=pivot_df.columns.tolist(),
                     y=pivot_df.index.tolist(),
-                    colorscale=config.colorscale,
+                    colorscale=colorscale,
+                    reversescale=self._is_spread_mode(config.value_mode),
                     showscale=(col == 2),  # Only show colorbar on right
                     colorbar=dict(
                         title=self._get_colorbar_title(config.value_mode),
@@ -434,7 +509,7 @@ class LiquidityHeatmap:
                     hovertemplate=(
                         f"DTE: %{{x}}<br>"
                         f"{self._get_y_axis_title(config.y_axis_mode)}: %{{y:.2f}}<br>"
-                        f"{self._get_colorbar_title(config.value_mode)}: %{{z:,.0f}}"
+                        f"{self._get_colorbar_title(config.value_mode)}: %{{z:{z_format}}}"
                         "<extra></extra>"
                     ),
                 ),
@@ -504,6 +579,9 @@ class LiquidityHeatmap:
         """
         df = self.df
 
+        # Filter out zero-bid options for spread stats (likely no market)
+        df_with_quotes = df[df["bid"] > 0]
+
         return {
             "ticker": self.chain_data.underlying_symbol,
             "underlying_price": self.chain_data.underlying_price,
@@ -531,4 +609,34 @@ class LiquidityHeatmap:
                 "min": float(df["moneyness"].min()),
                 "max": float(df["moneyness"].max()),
             },
+            "spread_stats": {
+                "contracts_with_quotes": len(df_with_quotes),
+                "avg_spread_absolute": float(df_with_quotes["spread_absolute"].mean()) if len(df_with_quotes) > 0 else 0,
+                "median_spread_absolute": float(df_with_quotes["spread_absolute"].median()) if len(df_with_quotes) > 0 else 0,
+                "avg_spread_percent": float(df_with_quotes["spread_percent"].mean()) if len(df_with_quotes) > 0 else 0,
+                "median_spread_percent": float(df_with_quotes["spread_percent"].median()) if len(df_with_quotes) > 0 else 0,
+                "min_spread_absolute": float(df_with_quotes["spread_absolute"].min()) if len(df_with_quotes) > 0 else 0,
+                "max_spread_absolute": float(df_with_quotes["spread_absolute"].max()) if len(df_with_quotes) > 0 else 0,
+                "tightest_spread_contracts": self._get_tightest_spreads(df_with_quotes, n=5),
+            },
         }
+
+    def _get_tightest_spreads(self, df: pd.DataFrame, n: int = 5) -> list[dict]:
+        """Get the contracts with the tightest spreads."""
+        if df.empty:
+            return []
+
+        tightest = df.nsmallest(n, "spread_percent")
+        return [
+            {
+                "symbol": row["symbol"],
+                "strike": row["strike"],
+                "dte": row["dte"],
+                "option_type": row["option_type"],
+                "spread_absolute": round(row["spread_absolute"], 2),
+                "spread_percent": round(row["spread_percent"], 2),
+                "bid": row["bid"],
+                "ask": row["ask"],
+            }
+            for _, row in tightest.iterrows()
+        ]
