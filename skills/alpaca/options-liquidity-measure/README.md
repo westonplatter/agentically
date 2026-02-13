@@ -28,8 +28,10 @@ A skill for visualizing options chain liquidity using 3D heatmaps. Uses Alpaca's
 ## Installation
 
 ```bash
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 ```
+
+Or let `uv` handle dependencies automatically when running commands.
 
 ## Configuration
 
@@ -43,32 +45,40 @@ export ALPACA_PAPER="true"  # Optional, defaults to true
 
 ## Usage
 
+export OPENAI_API_KEY=$(op read "op://sts_llm/mp_openai/api_key")                                                                                      
+  uv run python scripts/chunk_ingest.py \
+      --doc-type tech_tip \
+      --table-config openai_chunk500 \
+      --chunk-size 500 \
+      --chunk-overlap 50 \
+      --batch-size 32
+
 ### Command Line
 
 ```bash
 # Basic usage - generates a heatmap for AAPL
-python -m skills.alpaca.options-liquidity-measure.cli AAPL
+uv run python -m skills.alpaca.options-liquidity-measure.cli AAPL
 
 # Use moneyness on Y-axis with OI percentage
-python -m skills.alpaca.options-liquidity-measure.cli SPY --y-axis moneyness --value oi_percent
+uv run python -m skills.alpaca.options-liquidity-measure.cli SPY --y-axis moneyness --value oi_percent
 
 # Create 3D surface plot for calls only
-python -m skills.alpaca.options-liquidity-measure.cli QQQ --plot-type 3d --option-type call
+uv run python -m skills.alpaca.options-liquidity-measure.cli QQQ --plot-type 3d --option-type call
 
 # Filter by DTE range and show summary
-python -m skills.alpaca.options-liquidity-measure.cli TSLA --dte-min 7 --dte-max 45 --summary
+uv run python -m skills.alpaca.options-liquidity-measure.cli TSLA --dte-min 7 --dte-max 45 --summary
 
 # Save as PNG and open in browser
-python -m skills.alpaca.options-liquidity-measure.cli NVDA --format png --show
+uv run python -m skills.alpaca.options-liquidity-measure.cli NVDA --format png --show
 
 # Bid-ask spread heatmap (% of mid price) - see where liquidity is best
-python -m skills.alpaca.options-liquidity-measure.cli SPY --value spread_percent --y-axis moneyness
+uv run python -m skills.alpaca.options-liquidity-measure.cli SPY --value spread_percent --y-axis moneyness
 
 # Absolute spread heatmap with summary statistics
-python -m skills.alpaca.options-liquidity-measure.cli AAPL --value spread_absolute --summary
+uv run python -m skills.alpaca.options-liquidity-measure.cli AAPL --value spread_absolute --summary
 
 # Spread per delta - cost efficiency for delta exposure
-python -m skills.alpaca.options-liquidity-measure.cli QQQ --value spread_per_delta --option-type call
+uv run python -m skills.alpaca.options-liquidity-measure.cli QQQ --value spread_per_delta --option-type call
 ```
 
 ### Python API
