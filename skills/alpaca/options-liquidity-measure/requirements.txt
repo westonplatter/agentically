@@ -1,0 +1,12 @@
+# Alpaca SDK for real-time options data
+alpaca-py>=0.21.0
+
+# Data manipulation
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Visualization
+plotly>=5.18.0
+
+# For static image export (optional)
+kaleido>=0.2.1
